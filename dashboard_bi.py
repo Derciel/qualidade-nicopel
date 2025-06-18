@@ -55,7 +55,7 @@ if "token" not in st.session_state:
     }
     auth_url = MS_AUTH_URL.format(tenant=tenant_id) + "?" + urlencode(params)
 
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if "code" in query_params:
         code = query_params["code"][0]
         token_data = {
