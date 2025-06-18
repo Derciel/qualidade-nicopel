@@ -3,6 +3,8 @@ pandas
 matplotlib
 seaborn
 gspread
-oauth2client
 google-auth
+pillow
+plotly
 python-pptx
+requests
