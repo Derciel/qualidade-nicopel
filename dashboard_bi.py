@@ -18,107 +18,101 @@ import requests
 from PIL import Image
 import plotly.graph_objects as go
 
+# --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
 st.set_page_config(page_title="Dashboard de Não Conformidades", page_icon="📊", layout="wide")
 
-# --- Autenticação com streamlit_authenticator ---
-config = {
-    "credentials": {
-        "usernames": {
-            "ti": {
-                "email": "ti@nicopel.com.br",
-                "name": "TI",
-                "password": "$2b$12$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-            },
-            "qualidade": {
-                "email": "qualidade@nicopel.com.br",
-                "name": "Qualidade",
-                "password": "$2b$12$YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
-            }
-        }
-    },
-    "cookie": {
-        "name": "dashboard_cookie",
-        "key": "random_signature_key",
-        "expiry_days": 1
-    },
-    "preauthorized": {
-        "emails": ["ti@nicopel.com.br", "qualidade@nicopel.com.br"]
-    }
-}
+# --- DEFINIÇÕES GLOBAIS ---
+# CORREÇÃO: A variável LOGO_URL não estava definida. Adicionei a URL do logo da sua empresa.
+LOGO_URL = "https://www.nicopel.com.br/wp-content/uploads/2023/04/logomarca-nicopel.svg"
+
+# --- AUTENTICAÇÃO ---
+# MELHORIA: Carregando a configuração de um arquivo YAML externo para mais segurança.
+# Crie um arquivo chamado 'config.yaml' no mesmo diretório que este script.
+try:
+    with open('config.yaml') as file:
+        config = yaml.load(file, Loader=SafeLoader)
+except FileNotFoundError:
+    st.error("Erro: O arquivo 'config.yaml' não foi encontrado. Por favor, crie-o conforme as instruções.")
+    st.stop()
+
 
 authenticator = stauth.Authenticate(
-    config["credentials"],
-    config["cookie"]["name"],
-    config["cookie"]["key"],
-    config["cookie"]["expiry_days"]
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
 )
 
-if authentication_status is False:
-    st.error("Usuário ou senha incorretos.")
-elif authentication_status is None:
-    st.warning("Por favor, insira suas credenciais.")
-elif authentication_status:
-    authenticator.logout("Sair", "sidebar")
-    st.sidebar.success(f"Logado como {name}")
 
-    # --- Carregamento de Dados Google Sheets ---
-    GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
-    NOME_PLANILHA = '16KWu85cbnA6wxY8pjEbyAAqBUuxE9iUmOCmdAhKSF9Y'
-    NOME_ABA = 'Form'
+# --- FUNÇÕES DO DASHBOARD ---
 
-    @st.cache_data(ttl=300)
-    def load_data_from_gsheets():
-        try:
-            scope = [
-                'https://www.googleapis.com/auth/spreadsheets',
-                'https://www.googleapis.com/auth/drive.readonly'
-            ]
-            creds = Credentials.from_service_account_info(GOOGLE_SHEETS_CREDENTIALS, scopes=scope)
-            gc = gspread.authorize(creds)
-            planilha = gc.open_by_key(NOME_PLANILHA)
-            aba = planilha.worksheet(NOME_ABA)
-            dados = aba.get_all_records()
-            if not dados:
-                st.warning("A aba da planilha está vazia.")
-                return pd.DataFrame()
-            df = pd.DataFrame(dados)
-            df.rename(columns={"CLASSIFICAÇAO NC": "CLASSIFICAÇÃO NC"}, inplace=True)
-            df.columns = [col.strip() for col in df.columns]
-
-            df['DATA DA NAO CONFORMIDADE'] = pd.to_datetime(df['DATA DA NAO CONFORMIDADE'], errors='coerce', dayfirst=True)
-            df['DATA DE ENCERRAMENTO'] = pd.to_datetime(df['DATA DE ENCERRAMENTO'], errors='coerce', dayfirst=True)
-            df.dropna(subset=['DATA DA NAO CONFORMIDADE'], inplace=True)
-            df['STATUS'] = df['DATA DE ENCERRAMENTO'].apply(lambda x: 'Resolvida' if pd.notna(x) else 'Pendente')
-
-            cols_to_str = ['CLIENTE (Caso tenha)', 'DEPARTAMENTO RESPONSÁVEL', 'SETOR DO RESPONSÁVEL', 'CLASSIFICAÇÃO NC', 'AVALIAÇÃO DA EFICÁCIA']
-            for col in cols_to_str:
-                if col in df.columns:
-                    df[col] = df[col].astype(str)
-            return df
-        except Exception as e:
-            st.error(f"Ocorreu um erro ao carregar os dados: {e}")
+@st.cache_data(ttl=300)
+def load_data_from_gsheets():
+    """ Carrega e processa os dados da planilha do Google Sheets. """
+    try:
+        scope = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive.readonly'
+        ]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        gc = gspread.authorize(creds)
+        planilha = gc.open_by_key('16KWu85cbnA6wxY8pjEbyAAqBUuxE9iUmOCmdAhKSF9Y')
+        aba = planilha.worksheet('Form')
+        dados = aba.get_all_records()
+        if not dados:
+            st.warning("A aba da planilha está vazia.")
             return pd.DataFrame()
+        df = pd.DataFrame(dados)
+        df.rename(columns={"CLASSIFICAÇAO NC": "CLASSIFICAÇÃO NC"}, inplace=True)
+        df.columns = [col.strip() for col in df.columns]
 
-    st.title("📊 Dashboard de Análise de Não Conformidades")
-    df = load_data_from_gsheets()
-    st.dataframe(df)
+        df['DATA DA NAO CONFORMIDADE'] = pd.to_datetime(df['DATA DA NAO CONFORMIDADE'], errors='coerce', dayfirst=True)
+        df['DATA DE ENCERRAMENTO'] = pd.to_datetime(df['DATA DE ENCERRAMENTO'], errors='coerce', dayfirst=True)
+        df.dropna(subset=['DATA DA NAO CONFORMIDADE'], inplace=True)
+        df['STATUS'] = df['DATA DE ENCERRAMENTO'].apply(lambda x: 'Resolvida' if pd.notna(x) else 'Pendente')
 
+        cols_to_str = ['CLIENTE (Caso tenha)', 'DEPARTAMENTO RESPONSÁVEL', 'SETOR DO RESPONSÁVEL', 'CLASSIFICAÇÃO NC', 'AVALIAÇÃO DA EFICÁCIA']
+        for col in cols_to_str:
+            if col in df.columns:
+                df[col] = df[col].astype(str)
+        return df
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao carregar os dados do Google Sheets: {e}")
+        return pd.DataFrame()
 
 def download_image_from_url(url):
+    """ Baixa uma imagem de uma URL e a salva em um arquivo temporário. """
     try:
+        # A URL do logo é SVG, que precisa de um tratamento um pouco diferente
+        if url.endswith(".svg"):
+            st.warning("Logos em formato SVG não são suportados nativamente pela biblioteca 'python-pptx'. Tente usar um PNG ou JPG.")
+            return None # Retorna None se for SVG
+
         response = requests.get(url)
+        response.raise_for_status() # Lança um erro para status HTTP ruins
         img = Image.open(io.BytesIO(response.content))
+        
+        # Converte para PNG para garantir compatibilidade
+        with io.BytesIO() as output:
+            img.save(output, format="PNG")
+            content = output.getvalue()
+
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        img.save(temp_file.name)
+        temp_file.write(content)
+        temp_file.close()
         return temp_file.name
-    except:
+    except requests.exceptions.RequestException as e:
+        st.error(f"Não foi possível baixar o logo da URL: {e}")
+        return None
+    except Exception as e:
+        st.error(f"Erro ao processar a imagem do logo: {e}")
         return None
 
-# ALTERADO: Função de PPTX agora aceita o dicionário de cores
-
 def create_powerpoint_presentation(df, logo_url, cores_departamentos):
+    """ Cria a apresentação do PowerPoint com os dados filtrados. """
     prs = Presentation()
-    # Slide 1: Título (sem alterações)
+    
+    # Slide 1: Título
     title_slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(title_slide_layout)
     slide.shapes.title.text = "Relatório de Não Conformidades"
@@ -127,45 +121,29 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     if logo_path:
         slide.shapes.add_picture(logo_path, Inches(8), Inches(0.2), width=Inches(1.5))
 
-    # --- NOVO: Slide 2 com os KPIs como Gráficos de Rosca (Donut) ---
+    # Slide 2: KPIs de Status
     kpi_slide = prs.slides.add_slide(prs.slide_layouts[5])
     kpi_slide.shapes.title.text = "Principais Indicadores (KPIs)"
-
-    # Calcular os valores e porcentagens dos KPIs
     total_ncs = df.shape[0] if not df.empty else 1
     ncs_pendentes = df[df['STATUS'] == 'Pendente'].shape[0]
     ncs_resolvidas = df[df['STATUS'] == 'Resolvida'].shape[0]
-    
     perc_pendentes = (ncs_pendentes / total_ncs) * 100
     perc_resolvidas = (ncs_resolvidas / total_ncs) * 100
-
     kpis = [
         {'label': 'NCs Pendentes', 'value': ncs_pendentes, 'percent': perc_pendentes, 'color': RGBColor(228, 87, 87), 'total': total_ncs},
         {'label': 'NCs Resolvidas', 'value': ncs_resolvidas, 'percent': perc_resolvidas, 'color': RGBColor(87, 163, 105), 'total': total_ncs}
     ]
-
-    # Posições iniciais para os gráficos
-    left = Inches(1.5)
-    top = Inches(1.5)
-    size = Inches(3.0) # Tamanho do diâmetro
-    gap = Inches(1.0)
-
-    # Criar um "velocímetro" para cada KPI
+    left, top, size, gap = Inches(1.5), Inches(1.5), Inches(3.0), Inches(1.0)
     for kpi in kpis:
-        # 1. Círculo de fundo (cinza claro)
+        # Lógica para criar os gráficos de rosca no PPTX (mantida como original)
         kpi_slide.shapes.add_shape(MSO_SHAPE.DONUT, left, top, size, size)
-        
-        # 2. Arco de progresso (colorido)
-        # O ajuste `adj2` controla a "abertura" do arco. 21600000 = 360 graus.
-        # O ajuste `adj1` controla o tamanho do "buraco" do donut.
         arc = kpi_slide.shapes.add_shape(MSO_SHAPE.BLOCK_ARC, left, top, size, size)
-        arc.adjustments[0] = -5400000  # Começa no topo (12h)
-        arc.adjustments[1] = int((kpi['percent'] / 100) * 21600000 - 5400000) # Ângulo final
+        arc.adjustments[0] = -5400000
+        arc.adjustments[1] = int((kpi['percent'] / 100) * 21600000 - 5400000)
         arc.line.fill.background()
         arc.fill.solid()
         arc.fill.fore_color.rgb = kpi['color']
         
-        # 3. Texto no centro com a porcentagem
         textbox_percent = kpi_slide.shapes.add_textbox(left, top, size, size)
         tf_percent = textbox_percent.text_frame
         tf_percent.clear()
@@ -177,7 +155,6 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
         p_percent.font.bold = True
         p_percent.alignment = PP_ALIGN.CENTER
         
-        # 4. Texto abaixo com o rótulo e os valores
         textbox_label = kpi_slide.shapes.add_textbox(left, top + size - Inches(0.2), size, Inches(1))
         tf_label = textbox_label.text_frame
         tf_label.clear()
@@ -186,9 +163,9 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
         p_label.font.name = 'Roboto Slab'
         p_label.font.size = Pt(14)
         p_label.alignment = PP_ALIGN.CENTER
-
         left += size + gap
 
+    # Slide 3: Gráfico de Pizza por Classificação
     fig, ax = plt.subplots()
     df['CLASSIFICAÇÃO NC'].value_counts().plot.pie(autopct='%1.1f%%', ax=ax)
     ax.set_ylabel('')
@@ -200,10 +177,12 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     slide.shapes.title.text = "Classificação das NCs"
     slide.shapes.add_picture(buf, Inches(2), Inches(1.5), width=Inches(6))
 
-    # Slide 4 - Gráfico Departamentos (COM CORES PERSONALIZADAS)
+    # Slide 4: Gráfico de Barras por Departamento
     fig_depto, ax_depto = plt.subplots(figsize=(10, 6))
     depto_data = df.groupby('DEPARTAMENTO RESPONSÁVEL').size().reset_index(name='Quantidade')
-    sns.barplot(data=depto_data, x='DEPARTAMENTO RESPONSÁVEL', y='Quantidade', palette=cores_departamentos, ax=ax_depto)
+    # Convertendo cores hex para RGB para o Seaborn
+    palette_rgb = {k: tuple(int(v.lstrip('#')[i:i+2], 16)/255.0 for i in (0, 2, 4)) for k, v in cores_departamentos.items()}
+    sns.barplot(data=depto_data, x='DEPARTAMENTO RESPONSÁVEL', y='Quantidade', palette=palette_rgb, ax=ax_depto)
     ax_depto.set_title("NCs por Departamento", fontsize=14, weight='bold')
     ax_depto.set_xlabel("Departamento", fontsize=12)
     ax_depto.set_ylabel("Quantidade", fontsize=12)
@@ -220,8 +199,9 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     prs.save(pptx_io)
     return pptx_io.getvalue()
 
-# NOVO: Função para criar KPIs de medidor (gauge)
 def create_gauge_chart(value, title, max_value, color):
+    """ Cria um gráfico de medidor (gauge) com Plotly. """
+    # CORREÇÃO: Removida a dependência da variável 'tema_selecionado' que não existia.
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
@@ -237,129 +217,145 @@ def create_gauge_chart(value, title, max_value, color):
     ))
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': "white" if tema_selecionado == "Escuro" else "black", 'family': "Roboto Slab"}
+        font={'color': "black", 'family': "Roboto Slab"} # Cor do texto fixada para preto
     )
     return fig
 
-# --- INTERFACE PRINCIPAL ---
-st.title("📊 Dashboard de Análise de Não Conformidades")
-df = load_data_from_gsheets()
-if df.empty:
-    st.stop()
+# MELHORIA: Encapsulando toda a lógica do dashboard em uma função
+def main_dashboard():
+    """ Função principal que renderiza o dashboard após o login. """
+    
+    authenticator.logout("Sair", "sidebar")
+    st.sidebar.success(f"Logado como {st.session_state['name']}")
 
-# --- FILTROS NA SIDEBAR ---
-st.sidebar.header("Filtros Interativos")
-min_date = df['DATA DA NAO CONFORMIDADE'].min().date()
-max_date = df['DATA DA NAO CONFORMIDADE'].max().date()
-date_range = st.sidebar.date_input("Período da Não Conformidade:", value=(min_date, max_date), min_value=min_date, max_value=max_date)
-selected_classificacao = st.sidebar.multiselect("Classificação NC:", options=df['CLASSIFICAÇÃO NC'].unique(), default=df['CLASSIFICAÇÃO NC'].unique())
-selected_departments = st.sidebar.multiselect("Departamento Responsável:", options=df['DEPARTAMENTO RESPONSÁVEL'].unique(), default=df['DEPARTAMENTO RESPONSÁVEL'].unique())
-selected_status = st.sidebar.multiselect("Status:", options=df['STATUS'].unique(), default=df['STATUS'].unique())
+    st.title("📊 Dashboard de Análise de Não Conformidades")
+    df = load_data_from_gsheets()
+    if df.empty:
+        st.warning("Não foi possível carregar os dados. Verifique a planilha ou as permissões.")
+        st.stop()
 
-start_date, end_date = date_range
-df_filtered = df[
-    (df['DATA DA NAO CONFORMIDADE'].dt.date >= start_date) &
-    (df['DATA DA NAO CONFORMIDADE'].dt.date <= end_date) &
-    (df['CLASSIFICAÇÃO NC'].isin(selected_classificacao)) &
-    (df['DEPARTAMENTO RESPONSÁVEL'].isin(selected_departments)) &
-    (df['STATUS'].isin(selected_status))
-]
+    # --- FILTROS NA SIDEBAR ---
+    st.sidebar.header("Filtros Interativos")
+    min_date = df['DATA DA NAO CONFORMIDADE'].min().date()
+    max_date = df['DATA DA NAO CONFORMIDADE'].max().date()
+    date_range = st.sidebar.date_input("Período da Não Conformidade:", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+    
+    # Previne erro caso as colunas de filtro não existam
+    unique_classificacao = df['CLASSIFICAÇÃO NC'].unique() if 'CLASSIFICAÇÃO NC' in df.columns else []
+    unique_departments = df['DEPARTAMENTO RESPONSÁVEL'].unique() if 'DEPARTAMENTO RESPONSÁVEL' in df.columns else []
+    unique_status = df['STATUS'].unique() if 'STATUS' in df.columns else []
 
-# NOVO: Seção de seleção de cores na sidebar
-st.sidebar.markdown("---")
-st.sidebar.subheader("Cores por Departamento")
-# Usamos o DF original para ter todos os departamentos sempre disponíveis para colorir
-departamentos_unicos = df['DEPARTAMENTO RESPONSÁVEL'].unique()
-cores_setores = {}
-for depto in departamentos_unicos:
-    # A chave do color_picker precisa ser única
-    cor_padrao = "#1f77b4" # Azul padrão
-    cores_setores[depto] = st.sidebar.color_picker(f"Cor para {depto}", value=cor_padrao, key=f"color_{depto}")
+    selected_classificacao = st.sidebar.multiselect("Classificação NC:", options=unique_classificacao, default=unique_classificacao)
+    selected_departments = st.sidebar.multiselect("Departamento Responsável:", options=unique_departments, default=unique_departments)
+    selected_status = st.sidebar.multiselect("Status:", options=unique_status, default=unique_status)
+    
+    start_date, end_date = date_range
+    df_filtered = df[
+        (df['DATA DA NAO CONFORMIDADE'].dt.date >= start_date) &
+        (df['DATA DA NAO CONFORMIDADE'].dt.date <= end_date) &
+        (df['CLASSIFICAÇÃO NC'].isin(selected_classificacao)) &
+        (df['DEPARTAMENTO RESPONSÁVEL'].isin(selected_departments)) &
+        (df['STATUS'].isin(selected_status))
+    ]
 
-# BOTÃO DE EXPORTAÇÃO PARA PPTX
-st.sidebar.markdown("---")
-st.sidebar.header("Exportar Relatório")
-if not df_filtered.empty:
-    # ALTERADO: Passando o dicionário de cores para a função do PowerPoint
-    pptx_bytes = create_powerpoint_presentation(df_filtered, LOGO_URL, cores_setores)
-    st.sidebar.download_button(
-        label="Exportar para PowerPoint (.pptx)",
-        data=pptx_bytes,
-        file_name="Relatorio_NaoConformidades.pptx",
-        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    )
-else:
-    st.sidebar.info("Não há dados para exportar com os filtros atuais.")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Cores por Departamento")
+    departamentos_unicos = df['DEPARTAMENTO RESPONSÁVEL'].unique()
+    cores_setores = {}
+    for depto in departamentos_unicos:
+        cor_padrao = "#1f77b4"
+        cores_setores[depto] = st.sidebar.color_picker(f"Cor para {depto}", value=cor_padrao, key=f"color_{depto}")
 
-# ALTERADO: KPIs agora são medidores visuais
-st.markdown("---")
-total_ncs = df_filtered.shape[0]
-ncs_pendentes = df_filtered[df_filtered['STATUS'] == 'Pendente'].shape[0]
-df_resolvidas = df_filtered[df_filtered['STATUS'] == 'Resolvida']
-taxa_resolucao = (len(df_resolvidas) / total_ncs * 100) if total_ncs > 0 else 0
+    st.sidebar.markdown("---")
+    st.sidebar.header("Exportar Relatório")
+    if not df_filtered.empty:
+        pptx_bytes = create_powerpoint_presentation(df_filtered, LOGO_URL, cores_setores)
+        st.sidebar.download_button(
+            label="Exportar para PowerPoint (.pptx)",
+            data=pptx_bytes,
+            file_name="Relatorio_NaoConformidades.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+    else:
+        st.sidebar.info("Não há dados para exportar com os filtros atuais.")
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.plotly_chart(create_gauge_chart(total_ncs, "Total de NCs", max_value=len(df), color="#0083B8"), use_container_width=True)
-with col2:
-    st.plotly_chart(create_gauge_chart(ncs_pendentes, "NCs Pendentes", max_value=total_ncs, color="#E45757"), use_container_width=True)
-with col3:
-    st.plotly_chart(create_gauge_chart(taxa_resolucao, "% NCs Resolvidas", max_value=100, color="#57A369"), use_container_width=True)
+    # --- KPIs ---
+    st.markdown("---")
+    total_ncs = df_filtered.shape[0]
+    ncs_pendentes = df_filtered[df_filtered['STATUS'] == 'Pendente'].shape[0]
+    ncs_resolvidas = df_filtered[df_filtered['STATUS'] == 'Resolvida'].shape[0]
+    taxa_resolucao = (ncs_resolvidas / total_ncs * 100) if total_ncs > 0 else 0
 
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.plotly_chart(create_gauge_chart(total_ncs, "Total de NCs", max_value=len(df), color="#0083B8"), use_container_width=True)
+    with col2:
+        st.plotly_chart(create_gauge_chart(ncs_pendentes, "NCs Pendentes", max_value=total_ncs if total_ncs > 0 else 1, color="#E45757"), use_container_width=True)
+    with col3:
+        st.plotly_chart(create_gauge_chart(taxa_resolucao, "% NCs Resolvidas", max_value=100, color="#57A369"), use_container_width=True)
 
-st.markdown("---")
+    st.markdown("---")
 
-# Gráficos de Pizza
-col_graf1, col_graf2 = st.columns(2)
-with col_graf1:
-    st.subheader("Distribuição por Classificação")
-    fig, ax = plt.subplots()
-    df_filtered['CLASSIFICAÇÃO NC'].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
-    ax.set_ylabel('')
-    fig.patch.set_alpha(0.0) # Fundo transparente
-    ax.patch.set_alpha(0.0)
-    st.pyplot(fig)
-with col_graf2:
-    st.subheader("Avaliação da Eficácia das Ações")
-    df_eficacia = df_filtered[df_filtered['AVALIAÇÃO DA EFICÁCIA'].replace('', pd.NA).notna()]
-    if not df_eficacia.empty:
-        fig, ax = plt.subplots()
-        df_eficacia['AVALIAÇÃO DA EFICÁCIA'].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
-        ax.set_ylabel('')
-        fig.patch.set_alpha(0.0)
-        ax.patch.set_alpha(0.0)
+    # --- GRÁFICOS ---
+    col_graf1, col_graf2 = st.columns(2)
+    with col_graf1:
+        st.subheader("Distribuição por Classificação")
+        if not df_filtered.empty and not df_filtered['CLASSIFICAÇÃO NC'].value_counts().empty:
+            fig, ax = plt.subplots()
+            df_filtered['CLASSIFICAÇÃO NC'].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
+            ax.set_ylabel('')
+            st.pyplot(fig)
+        else:
+            st.write("Nenhum dado de classificação para exibir.")
+            
+    with col_graf2:
+        st.subheader("Avaliação da Eficácia das Ações")
+        df_eficacia = df_filtered[df_filtered['AVALIAÇÃO DA EFICÁCIA'].replace('', pd.NA).notna()]
+        if not df_eficacia.empty and not df_eficacia['AVALIAÇÃO DA EFICÁCIA'].value_counts().empty:
+            fig, ax = plt.subplots()
+            df_eficacia['AVALIAÇÃO DA EFICÁCIA'].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
+            ax.set_ylabel('')
+            st.pyplot(fig)
+        else:
+            st.write("Nenhum dado de eficácia para exibir.")
+
+    st.markdown("---")
+    st.subheader("Não Conformidades por Departamento")
+    if not df_filtered.empty:
+        df_depto = df_filtered.groupby('DEPARTAMENTO RESPONSÁVEL').size().reset_index(name='Quantidade')
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(
+            data=df_depto,
+            x='DEPARTAMENTO RESPONSÁVEL',
+            y='Quantidade',
+            palette=cores_setores,
+            ax=ax
+        )
+        ax.set_title("Não Conformidades por Departamento", fontsize=14, weight='bold')
+        ax.set_xlabel("Departamento", fontsize=12)
+        ax.set_ylabel("Quantidade", fontsize=12)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
         st.pyplot(fig)
     else:
-        st.write("Nenhum dado de eficácia para exibir.")
+        st.write("Nenhum dado para exibir com os filtros atuais.")
 
-st.markdown("---")
-st.subheader("Não Conformidades por Departamento")
-if not df_filtered.empty:
-    df_depto = df_filtered.groupby('DEPARTAMENTO RESPONSÁVEL').size().reset_index(name='Quantidade')
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # ALTERADO: Gráfico de barras principal agora usa as cores personalizadas
-    sns.barplot(
-        data=df_depto,
-        x='DEPARTAMENTO RESPONSÁVEL',
-        y='Quantidade',
-        palette=cores_setores, # Usando o dicionário de cores
-        ax=ax
-    )
-    
-    ax.set_title("Não Conformidades por Departamento", fontsize=14, weight='bold')
-    ax.set_xlabel("Departamento", fontsize=12)
-    ax.set_ylabel("Quantidade", fontsize=12)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-    sns.despine()
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
-    
-    st.pyplot(fig)
-else:
-    st.write("Nenhum dado para exibir com os filtros atuais.")
+    st.subheader("Dados Detalhados (Filtrados)")
+    st.dataframe(df_filtered)
 
 
-st.subheader("Dados Detalhados (Filtrados)")
-st.dataframe(df_filtered)
+# --- CONTROLE DE FLUXO DA APLICAÇÃO (LOGIN vs DASHBOARD) ---
+
+# MELHORIA: Tela de login mais intuitiva e centralizada.
+# O login é a primeira coisa a ser renderizada.
+name, authentication_status, username = authenticator.login(location="main")
+
+
+if st.session_state["authentication_status"]:
+    # Se o login for bem-sucedido, executa a função principal do dashboard.
+    main_dashboard()
+elif st.session_state["authentication_status"] is False:
+    # Se o login falhar, exibe uma mensagem de erro.
+    st.error("Usuário ou senha incorretos.")
+elif st.session_state["authentication_status"] is None:
+    # Estado inicial, aguardando a entrada do usuário.
+    st.warning("Por favor, insira suas credenciais para acessar o dashboard.")
