@@ -1,7 +1,5 @@
 import streamlit as st
 import streamlit_authenticator as stauth
-import yaml
-from yaml.loader import SafeLoader
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,26 +20,20 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Dashboard de Não Conformidades - Nicopel Embalagens", page_icon="📊", layout="wide")
 
 # --- DEFINIÇÕES GLOBAIS ---
-# CORREÇÃO: A variável LOGO_URL não estava definida. Adicionei a URL do logo da sua empresa.
 LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 
 # --- AUTENTICAÇÃO ---
-# MELHORIA: Carregando a configuração de um arquivo YAML externo para mais segurança.
-# Crie um arquivo chamado 'config.yaml' no mesmo diretório que este script.
+# ALTERADO: A autenticação agora lê diretamente dos Secrets do Streamlit, eliminando o config.yaml.
 try:
-    with open('config.yaml') as file:
-        config = yaml.load(file, Loader=SafeLoader)
-except FileNotFoundError:
-    st.error("Erro: O arquivo 'config.yaml' não foi encontrado. Por favor, crie-o conforme as instruções.")
+    authenticator = stauth.Authenticate(
+        st.secrets['credentials'],
+        st.secrets['cookie']['name'],
+        st.secrets['cookie']['key'],
+        st.secrets['cookie']['expiry_days']
+    )
+except KeyError as e:
+    st.error(f"Erro de configuração nos Secrets: A chave '{e}' não foi encontrada. Verifique seu arquivo secrets.toml.")
     st.stop()
-
-
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
-)
 
 
 # --- FUNÇÕES DO DASHBOARD ---
@@ -50,11 +42,10 @@ authenticator = stauth.Authenticate(
 def load_data_from_gsheets():
     """ Carrega e processa os dados da planilha do Google Sheets. """
     try:
-        scope = [
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=[
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive.readonly'
-        ]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        ])
         gc = gspread.authorize(creds)
         planilha = gc.open_by_key('16KWu85cbnA6wxY8pjEbyAAqBUuxE9iUmOCmdAhKSF9Y')
         aba = planilha.worksheet('Form')
@@ -83,16 +74,10 @@ def load_data_from_gsheets():
 def download_image_from_url(url):
     """ Baixa uma imagem de uma URL e a salva em um arquivo temporário. """
     try:
-        # A URL do logo é SVG, que precisa de um tratamento um pouco diferente
-        if url.endswith(".svg"):
-            st.warning("Logos em formato SVG não são suportados nativamente pela biblioteca 'python-pptx'. Tente usar um PNG ou JPG.")
-            return None # Retorna None se for SVG
-
         response = requests.get(url)
-        response.raise_for_status() # Lança um erro para status HTTP ruins
+        response.raise_for_status()
         img = Image.open(io.BytesIO(response.content))
         
-        # Converte para PNG para garantir compatibilidade
         with io.BytesIO() as output:
             img.save(output, format="PNG")
             content = output.getvalue()
@@ -101,9 +86,6 @@ def download_image_from_url(url):
         temp_file.write(content)
         temp_file.close()
         return temp_file.name
-    except requests.exceptions.RequestException as e:
-        st.error(f"Não foi possível baixar o logo da URL: {e}")
-        return None
     except Exception as e:
         st.error(f"Erro ao processar a imagem do logo: {e}")
         return None
@@ -116,7 +98,7 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     title_slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(title_slide_layout)
     slide.shapes.title.text = "Relatório de Não Conformidades"
-    slide.placeholders[1].text = f"Gerado em: {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}"
+    slide.placeholders[1].text = f"Gerado em: {pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%d/%m/%Y %H:%M')}"
     logo_path = download_image_from_url(logo_url)
     if logo_path:
         slide.shapes.add_picture(logo_path, Inches(8), Inches(0.2), width=Inches(1.5))
@@ -135,7 +117,6 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     ]
     left, top, size, gap = Inches(1.5), Inches(1.5), Inches(3.0), Inches(1.0)
     for kpi in kpis:
-        # Lógica para criar os gráficos de rosca no PPTX (mantida como original)
         kpi_slide.shapes.add_shape(MSO_SHAPE.DONUT, left, top, size, size)
         arc = kpi_slide.shapes.add_shape(MSO_SHAPE.BLOCK_ARC, left, top, size, size)
         arc.adjustments[0] = -5400000
@@ -180,7 +161,6 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
     # Slide 4: Gráfico de Barras por Departamento
     fig_depto, ax_depto = plt.subplots(figsize=(10, 6))
     depto_data = df.groupby('DEPARTAMENTO RESPONSÁVEL').size().reset_index(name='Quantidade')
-    # Convertendo cores hex para RGB para o Seaborn
     palette_rgb = {k: tuple(int(v.lstrip('#')[i:i+2], 16)/255.0 for i in (0, 2, 4)) for k, v in cores_departamentos.items()}
     sns.barplot(data=depto_data, x='DEPARTAMENTO RESPONSÁVEL', y='Quantidade', palette=palette_rgb, ax=ax_depto)
     ax_depto.set_title("NCs por Departamento", fontsize=14, weight='bold')
@@ -201,7 +181,6 @@ def create_powerpoint_presentation(df, logo_url, cores_departamentos):
 
 def create_gauge_chart(value, title, max_value, color):
     """ Cria um gráfico de medidor (gauge) com Plotly. """
-    # CORREÇÃO: Removida a dependência da variável 'tema_selecionado' que não existia.
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
@@ -217,11 +196,10 @@ def create_gauge_chart(value, title, max_value, color):
     ))
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': "black", 'family': "Roboto Slab"} # Cor do texto fixada para preto
+        font={'color': "black", 'family': "Roboto Slab"}
     )
     return fig
 
-# MELHORIA: Encapsulando toda a lógica do dashboard em uma função
 def main_dashboard():
     """ Função principal que renderiza o dashboard após o login. """
     
@@ -234,13 +212,11 @@ def main_dashboard():
         st.warning("Não foi possível carregar os dados. Verifique a planilha ou as permissões.")
         st.stop()
 
-    # --- FILTROS NA SIDEBAR ---
     st.sidebar.header("Filtros Interativos")
     min_date = df['DATA DA NAO CONFORMIDADE'].min().date()
     max_date = df['DATA DA NAO CONFORMIDADE'].max().date()
     date_range = st.sidebar.date_input("Período da Não Conformidade:", value=(min_date, max_date), min_value=min_date, max_value=max_date)
     
-    # Previne erro caso as colunas de filtro não existam
     unique_classificacao = df['CLASSIFICAÇÃO NC'].unique() if 'CLASSIFICAÇÃO NC' in df.columns else []
     unique_departments = df['DEPARTAMENTO RESPONSÁVEL'].unique() if 'DEPARTAMENTO RESPONSÁVEL' in df.columns else []
     unique_status = df['STATUS'].unique() if 'STATUS' in df.columns else []
@@ -279,7 +255,6 @@ def main_dashboard():
     else:
         st.sidebar.info("Não há dados para exportar com os filtros atuais.")
 
-    # --- KPIs ---
     st.markdown("---")
     total_ncs = df_filtered.shape[0]
     ncs_pendentes = df_filtered[df_filtered['STATUS'] == 'Pendente'].shape[0]
@@ -295,8 +270,6 @@ def main_dashboard():
         st.plotly_chart(create_gauge_chart(taxa_resolucao, "% NCs Resolvidas", max_value=100, color="#57A369"), use_container_width=True)
 
     st.markdown("---")
-
-    # --- GRÁFICOS ---
     col_graf1, col_graf2 = st.columns(2)
     with col_graf1:
         st.subheader("Distribuição por Classificação")
@@ -342,19 +315,13 @@ def main_dashboard():
     st.subheader("Dados Detalhados (Filtrados)")
     st.dataframe(df_filtered)
 
-
-
 # --- CONTROLE DE FLUXO DA APLICAÇÃO (LOGIN vs DASHBOARD) ---
-# MELHORIA: Usando a sintaxe moderna e mais estável da biblioteca.
-# O método authenticator.login() agora é o responsável por renderizar o formulário.
+# Usando a sintaxe moderna e mais estável da biblioteca.
 authenticator.login()
 
-if st.session_state["authentication_status"]:
-    # Se o login for bem-sucedido, executa a função principal do dashboard.
+if st.session_state.get("authentication_status"):
     main_dashboard()
-elif st.session_state["authentication_status"] is False:
-    # Se o login falhar, exibe uma mensagem de erro na própria área do formulário.
+elif st.session_state.get("authentication_status") is False:
     st.error("Usuário ou senha incorretos.")
-elif st.session_state["authentication_status"] is None:
-    # Estado inicial, aguardando a entrada do usuário.
+elif st.session_state.get("authentication_status") is None:
     st.warning("Por favor, insira suas credenciais para acessar o dashboard.")
