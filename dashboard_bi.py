@@ -34,6 +34,12 @@ client_secret = st.secrets["oauth_microsoft"]["client_secret"]
 tenant_id = st.secrets["oauth_microsoft"]["tenant_id"]
 redirect_uri = st.secrets["oauth_microsoft"]["redirect_uri"]
 
+# Lista de emails autorizados
+EMAILS_AUTORIZADOS = [
+    "ti@nicopel.com.br",
+    "qualidade@nicopel.com.br"
+]
+
 if "token" not in st.session_state:
     params = {
         "client_id": client_id,
@@ -70,7 +76,12 @@ if "token" not in st.session_state:
 # --- Dados do usuário autenticado ---
 headers = {"Authorization": f"Bearer {st.session_state.token['access_token']}"}
 profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
-st.sidebar.success(f"Logado como {profile['displayName']}")
+
+if profile["mail"] not in EMAILS_AUTORIZADOS:
+    st.error("Você não está autorizado a acessar este dashboard.")
+    st.stop()
+
+st.sidebar.success(f"Logado como {profile['displayName']} ({profile['mail']})")
 
 # --- Carregamento de Dados Google Sheets ---
 GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
