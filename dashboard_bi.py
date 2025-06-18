@@ -40,6 +40,10 @@ EMAILS_AUTORIZADOS = [
     "qualidade@nicopel.com.br"
 ]
 
+if "logout" in st.query_params:
+    st.session_state.clear()
+    st.experimental_rerun()
+
 if "token" not in st.session_state:
     params = {
         "client_id": client_id,
@@ -81,7 +85,9 @@ if profile["mail"] not in EMAILS_AUTORIZADOS:
     st.error("Você não está autorizado a acessar este dashboard.")
     st.stop()
 
+logout_url = st.experimental_get_url().split("?")[0] + "?logout=true"
 st.sidebar.success(f"Logado como {profile['displayName']} ({profile['mail']})")
+st.sidebar.markdown(f"[Sair]({logout_url})")
 
 # --- Carregamento de Dados Google Sheets ---
 GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
