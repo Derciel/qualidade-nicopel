@@ -343,18 +343,17 @@ def main_dashboard():
     st.dataframe(df_filtered)
 
 
+
 # --- CONTROLE DE FLUXO DA APLICAÇÃO (LOGIN vs DASHBOARD) ---
-
-# MELHORIA: Tela de login mais intuitiva e centralizada.
-# O login é a primeira coisa a ser renderizada.
-name, authentication_status, username = authenticator.login(location="main")
-
+# MELHORIA: Usando a sintaxe moderna e mais estável da biblioteca.
+# O método authenticator.login() agora é o responsável por renderizar o formulário.
+authenticator.login()
 
 if st.session_state["authentication_status"]:
     # Se o login for bem-sucedido, executa a função principal do dashboard.
     main_dashboard()
 elif st.session_state["authentication_status"] is False:
-    # Se o login falhar, exibe uma mensagem de erro.
+    # Se o login falhar, exibe uma mensagem de erro na própria área do formulário.
     st.error("Usuário ou senha incorretos.")
 elif st.session_state["authentication_status"] is None:
     # Estado inicial, aguardando a entrada do usuário.
