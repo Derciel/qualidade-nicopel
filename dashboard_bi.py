@@ -1,6 +1,8 @@
 import streamlit as st
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
 import pandas as pd
-import pyrebase
 import matplotlib.pyplot as plt
 import seaborn as sns
 import gspread
@@ -16,76 +18,93 @@ import requests
 from PIL import Image
 import plotly.graph_objects as go
 
-st.set_page_config(
-    page_title="Dashboard de Não Conformidades",
-    page_icon="📊",
-    layout="wide"
+st.set_page_config(page_title="Dashboard de Não Conformidades", page_icon="📊", layout="wide")
+
+# --- Autenticação com streamlit_authenticator ---
+config = {
+    "credentials": {
+        "usernames": {
+            "ti": {
+                "email": "ti@nicopel.com.br",
+                "name": "TI",
+                "password": "$2b$12$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            },
+            "qualidade": {
+                "email": "qualidade@nicopel.com.br",
+                "name": "Qualidade",
+                "password": "$2b$12$YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+            }
+        }
+    },
+    "cookie": {
+        "name": "dashboard_cookie",
+        "key": "random_signature_key",
+        "expiry_days": 1
+    },
+    "preauthorized": {
+        "emails": ["ti@nicopel.com.br", "qualidade@nicopel.com.br"]
+    }
+}
+
+authenticator = stauth.Authenticate(
+    config["credentials"],
+    config["cookie"]["name"],
+    config["cookie"]["key"],
+    config["cookie"]["expiry_days"]
 )
 
-# --- Login Firebase ---
-firebase_config = st.secrets["firebase_config"]
-firebase = pyrebase.initialize_app(firebase_config)
-auth = firebase.auth()
+name, authentication_status, username = authenticator.login("Login", "main")
 
-if "user" not in st.session_state:
-    st.image("https://cdn-icons-png.flaticon.com/512/732/732221.png", width=100)
-    st.title("Bem-vindo ao Dashboard de Qualidade")
+if authentication_status is False:
+    st.error("Usuário ou senha incorretos.")
+elif authentication_status is None:
+    st.warning("Por favor, insira suas credenciais.")
+elif authentication_status:
+    authenticator.logout("Sair", "sidebar")
+    st.sidebar.success(f"Logado como {name}")
 
-    email = st.text_input("Email")
-    password = st.text_input("Senha", type="password")
+    # --- Carregamento de Dados Google Sheets ---
+    GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
+    NOME_PLANILHA = '16KWu85cbnA6wxY8pjEbyAAqBUuxE9iUmOCmdAhKSF9Y'
+    NOME_ABA = 'Form'
 
-    if st.button("Entrar"):
+    @st.cache_data(ttl=300)
+    def load_data_from_gsheets():
         try:
-            user = auth.sign_in_with_email_and_password(email, password)
-            st.session_state.user = user
-            st.success("Login realizado com sucesso.")
-            st.experimental_rerun()
-        except:
-            st.error("Email ou senha incorretos.")
-    st.stop()
+            scope = [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive.readonly'
+            ]
+            creds = Credentials.from_service_account_info(GOOGLE_SHEETS_CREDENTIALS, scopes=scope)
+            gc = gspread.authorize(creds)
+            planilha = gc.open_by_key(NOME_PLANILHA)
+            aba = planilha.worksheet(NOME_ABA)
+            dados = aba.get_all_records()
+            if not dados:
+                st.warning("A aba da planilha está vazia.")
+                return pd.DataFrame()
+            df = pd.DataFrame(dados)
+            df.rename(columns={"CLASSIFICAÇAO NC": "CLASSIFICAÇÃO NC"}, inplace=True)
+            df.columns = [col.strip() for col in df.columns]
 
-st.sidebar.success(f"Logado como {st.session_state.user['email']}")
-if st.sidebar.button("Sair"):
-    st.session_state.clear()
-    st.experimental_rerun()
+            df['DATA DA NAO CONFORMIDADE'] = pd.to_datetime(df['DATA DA NAO CONFORMIDADE'], errors='coerce', dayfirst=True)
+            df['DATA DE ENCERRAMENTO'] = pd.to_datetime(df['DATA DE ENCERRAMENTO'], errors='coerce', dayfirst=True)
+            df.dropna(subset=['DATA DA NAO CONFORMIDADE'], inplace=True)
+            df['STATUS'] = df['DATA DE ENCERRAMENTO'].apply(lambda x: 'Resolvida' if pd.notna(x) else 'Pendente')
 
-# --- Carregamento de Dados Google Sheets ---
-GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
-NOME_PLANILHA = '16KWu85cbnA6wxY8pjEbyAAqBUuxE9iUmOCmdAhKSF9Y'
-NOME_ABA = 'Form'
-
-@st.cache_data(ttl=300)
-def load_data_from_gsheets():
-    try:
-        scope = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive.readonly'
-        ]
-        creds = Credentials.from_service_account_info(GOOGLE_SHEETS_CREDENTIALS, scopes=scope)
-        gc = gspread.authorize(creds)
-        planilha = gc.open_by_key(NOME_PLANILHA)
-        aba = planilha.worksheet(NOME_ABA)
-        dados = aba.get_all_records()
-        if not dados:
-            st.warning("A aba da planilha está vazia.")
+            cols_to_str = ['CLIENTE (Caso tenha)', 'DEPARTAMENTO RESPONSÁVEL', 'SETOR DO RESPONSÁVEL', 'CLASSIFICAÇÃO NC', 'AVALIAÇÃO DA EFICÁCIA']
+            for col in cols_to_str:
+                if col in df.columns:
+                    df[col] = df[col].astype(str)
+            return df
+        except Exception as e:
+            st.error(f"Ocorreu um erro ao carregar os dados: {e}")
             return pd.DataFrame()
-        df = pd.DataFrame(dados)
-        df.rename(columns={"CLASSIFICAÇAO NC": "CLASSIFICAÇÃO NC"}, inplace=True)
-        df.columns = [col.strip() for col in df.columns]
 
-        df['DATA DA NAO CONFORMIDADE'] = pd.to_datetime(df['DATA DA NAO CONFORMIDADE'], errors='coerce', dayfirst=True)
-        df['DATA DE ENCERRAMENTO'] = pd.to_datetime(df['DATA DE ENCERRAMENTO'], errors='coerce', dayfirst=True)
-        df.dropna(subset=['DATA DA NAO CONFORMIDADE'], inplace=True)
-        df['STATUS'] = df['DATA DE ENCERRAMENTO'].apply(lambda x: 'Resolvida' if pd.notna(x) else 'Pendente')
+    st.title("📊 Dashboard de Análise de Não Conformidades")
+    df = load_data_from_gsheets()
+    st.dataframe(df)
 
-        cols_to_str = ['CLIENTE (Caso tenha)', 'DEPARTAMENTO RESPONSÁVEL', 'SETOR DO RESPONSÁVEL', 'CLASSIFICAÇÃO NC', 'AVALIAÇÃO DA EFICÁCIA']
-        for col in cols_to_str:
-            if col in df.columns:
-                df[col] = df[col].astype(str)
-        return df
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao carregar os dados: {e}")
-        return pd.DataFrame()
 
 def download_image_from_url(url):
     try:

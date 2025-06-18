@@ -8,4 +8,5 @@ pillow
 plotly
 python-pptx
 requests
-pyrebase4
+streamlit-authenticator
+bcrypt
