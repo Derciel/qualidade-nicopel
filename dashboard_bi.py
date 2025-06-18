@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import pyrebase
 import matplotlib.pyplot as plt
 import seaborn as sns
 import gspread
@@ -14,10 +15,6 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 import requests
 from PIL import Image
 import plotly.graph_objects as go
-from urllib.parse import urlencode, parse_qs
-import requests
-import json
-import base64
 
 st.set_page_config(
     page_title="Dashboard de Não Conformidades",
@@ -25,87 +22,32 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Autenticação Microsoft ---
-MS_AUTH_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
-MS_TOKEN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+# --- Login Firebase ---
+firebase_config = st.secrets["firebase_config"]
+firebase = pyrebase.initialize_app(firebase_config)
+auth = firebase.auth()
 
-client_id = st.secrets["oauth_microsoft"]["client_id"]
-client_secret = st.secrets["oauth_microsoft"]["client_secret"]
-tenant_id = st.secrets["oauth_microsoft"]["tenant_id"]
-redirect_uri = st.secrets["oauth_microsoft"]["redirect_uri"]
+if "user" not in st.session_state:
+    st.image("https://cdn-icons-png.flaticon.com/512/732/732221.png", width=100)
+    st.title("Bem-vindo ao Dashboard de Qualidade")
 
-# Lista de emails autorizados
-EMAILS_AUTORIZADOS = [
-    "ti@nicopel.com.br",
-    "qualidade@nicopel.com.br"
-]
+    email = st.text_input("Email")
+    password = st.text_input("Senha", type="password")
 
-if "logout" in st.query_params:
-    st.session_state.clear()
-    st.experimental_rerun()
-
-if "token" not in st.session_state:
-    params = {
-        "client_id": client_id,
-        "response_type": "code",
-        "redirect_uri": redirect_uri,
-        "response_mode": "query",
-        "scope": "User.Read openid profile email",
-        "state": "12345"
-    }
-    auth_url = MS_AUTH_URL.format(tenant=tenant_id) + "?" + urlencode(params)
-
-    query_params = st.query_params
-    if "code" in query_params:
-        code = query_params["code"][0]
-        token_data = {
-            "client_id": client_id,
-            "scope": "User.Read",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-            "client_secret": client_secret
-        }
-        response = requests.post(MS_TOKEN_URL.format(tenant=tenant_id), data=token_data)
-        if response.status_code == 200:
-            st.session_state.token = response.json()
+    if st.button("Entrar"):
+        try:
+            user = auth.sign_in_with_email_and_password(email, password)
+            st.session_state.user = user
+            st.success("Login realizado com sucesso.")
             st.experimental_rerun()
-        else:
-            st.error("Erro na autenticação com Microsoft.")
-            st.stop()
-    else:
-        st.markdown(
-    f"""
-    <div style='text-align: center; margin-top: 40px;'>
-        <a href="{auth_url}" style='
-            background-color: #2F2F2F;
-            color: white;
-            padding: 14px 28px;
-            text-decoration: none;
-            font-size: 16px;
-            border-radius: 8px;
-            display: inline-block;
-            font-weight: bold;
-        '>
-            Entrar com Microsoft
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-        st.stop()
-
-# --- Dados do usuário autenticado ---
-headers = {"Authorization": f"Bearer {st.session_state.token['access_token']}"}
-profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
-
-if profile["mail"] not in EMAILS_AUTORIZADOS:
-    st.error("Você não está autorizado a acessar este dashboard.")
+        except:
+            st.error("Email ou senha incorretos.")
     st.stop()
 
-logout_url = st.experimental_get_url().split("?")[0] + "?logout=true"
-st.sidebar.success(f"Logado como {profile['displayName']} ({profile['mail']})")
-st.sidebar.markdown(f"[Sair]({logout_url})")
+st.sidebar.success(f"Logado como {st.session_state.user['email']}")
+if st.sidebar.button("Sair"):
+    st.session_state.clear()
+    st.experimental_rerun()
 
 # --- Carregamento de Dados Google Sheets ---
 GOOGLE_SHEETS_CREDENTIALS = st.secrets["gcp_service_account"]
