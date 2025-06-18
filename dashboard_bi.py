@@ -26,7 +26,7 @@ LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 # ALTERADO: A autenticação agora lê diretamente dos Secrets do Streamlit, eliminando o config.yaml.
 try:
     authenticator = stauth.Authenticate(
-        st.secrets['credentials'].copy(),   
+        st.secrets['credentials'],   
         st.secrets['cookie']['name'],
         st.secrets['cookie']['key'],
         st.secrets['cookie']['expiry_days']
