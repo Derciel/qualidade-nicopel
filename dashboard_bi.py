@@ -74,7 +74,25 @@ if "token" not in st.session_state:
             st.error("Erro na autenticação com Microsoft.")
             st.stop()
     else:
-        st.markdown(f"<a href='{auth_url}' target='_self'>Clique aqui para entrar com Microsoft</a>", unsafe_allow_html=True)
+        st.markdown(
+    f"""
+    <div style='text-align: center; margin-top: 40px;'>
+        <a href="{auth_url}" style='
+            background-color: #2F2F2F;
+            color: white;
+            padding: 14px 28px;
+            text-decoration: none;
+            font-size: 16px;
+            border-radius: 8px;
+            display: inline-block;
+            font-weight: bold;
+        '>
+            Entrar com Microsoft
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
         st.stop()
 
 # --- Dados do usuário autenticado ---
