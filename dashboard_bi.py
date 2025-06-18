@@ -15,7 +15,6 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 import requests
 from PIL import Image
 import plotly.graph_objects as go
-import copy
 
 # --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
 st.set_page_config(page_title="Dashboard de Não Conformidades - Nicopel Embalagens", page_icon="📊", layout="wide")
@@ -25,15 +24,27 @@ LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 
 
 try:
-    # A SOLUÇÃO DEFINITIVA: Criar uma cópia profunda e totalmente mutável dos segredos.
-    credentials = copy.deepcopy(st.secrets['credentials'])
+    # --- SOLUÇÃO MANUAL E DEFINITIVA ---
+    # Passo 1: Construir um dicionário Python puro a partir dos segredos.
+    # Isso evita qualquer problema de recursão ou de objetos de "somente leitura".
+    credentials = {
+        "usernames": {}
+    }
+    for username, user_info in st.secrets["credentials"]["usernames"].items():
+        credentials["usernames"][username] = {
+            "email": user_info["email"],
+            "name": user_info["name"],
+            "password": user_info["password"]
+        }
 
+    # Passo 2: Passar o dicionário puro e recém-criado para o autenticador.
     authenticator = stauth.Authenticate(
         credentials,
         st.secrets['cookie']['name'],
         st.secrets['cookie']['key'],
         st.secrets['cookie']['expiry_days']
     )
+
 except KeyError as e:
     st.error(f"Erro de configuração nos Secrets: A chave '{e}' não foi encontrada. Verifique seu arquivo secrets.toml.")
     st.stop()
