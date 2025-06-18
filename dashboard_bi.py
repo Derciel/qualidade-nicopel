@@ -19,11 +19,11 @@ from PIL import Image
 import plotly.graph_objects as go
 
 # --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
-st.set_page_config(page_title="Dashboard de Não Conformidades", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Dashboard de Não Conformidades - Nicopel Embalagens", page_icon="📊", layout="wide")
 
 # --- DEFINIÇÕES GLOBAIS ---
 # CORREÇÃO: A variável LOGO_URL não estava definida. Adicionei a URL do logo da sua empresa.
-LOGO_URL = "https://www.nicopel.com.br/wp-content/uploads/2023/04/logomarca-nicopel.svg"
+LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 
 # --- AUTENTICAÇÃO ---
 # MELHORIA: Carregando a configuração de um arquivo YAML externo para mais segurança.

@@ -3,11 +3,11 @@ credentials:
     ti:
       email: ti@nicopel.com.br
       name: TI
-      password: "$2b$12$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" # Mantenha seu hash original
+      password: "N1c0p3l4537" # Mantenha seu hash original
     qualidade:
       email: qualidade@nicopel.com.br
       name: Qualidade
-      password: "$2b$12$YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY" # Mantenha seu hash original
+      password: "N1c0p3l4537" # Mantenha seu hash original
 cookie:
   expiry_days: 1
   key: random_signature_key # Idealmente, esta chave deve ser um segredo complexo
