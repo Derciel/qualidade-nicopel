@@ -15,6 +15,7 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 import requests
 from PIL import Image
 import plotly.graph_objects as go
+import copy
 
 # --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
 st.set_page_config(page_title="Dashboard de Não Conformidades - Nicopel Embalagens", page_icon="📊", layout="wide")
@@ -22,17 +23,22 @@ st.set_page_config(page_title="Dashboard de Não Conformidades - Nicopel Embalag
 # --- DEFINIÇÕES GLOBAIS ---
 LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 
-# --- AUTENTICAÇÃO ---
-# ALTERADO: A autenticação agora lê diretamente dos Secrets do Streamlit, eliminando o config.yaml.
+
 try:
-        authenticator = stauth.Authenticate(
-        dict(st.secrets['credentials']),  # A SOLUÇÃO ESTÁ AQUI, NO .copy()
+    # A SOLUÇÃO DEFINITIVA: Criar uma cópia profunda e totalmente mutável dos segredos.
+    credentials = copy.deepcopy(st.secrets['credentials'])
+
+    authenticator = stauth.Authenticate(
+        credentials,
         st.secrets['cookie']['name'],
         st.secrets['cookie']['key'],
         st.secrets['cookie']['expiry_days']
     )
 except KeyError as e:
     st.error(f"Erro de configuração nos Secrets: A chave '{e}' não foi encontrada. Verifique seu arquivo secrets.toml.")
+    st.stop()
+except Exception as e:
+    st.error(f"Ocorreu um erro inesperado na inicialização da autenticação: {e}")
     st.stop()
 
 # --- FUNÇÕES DO DASHBOARD ---
