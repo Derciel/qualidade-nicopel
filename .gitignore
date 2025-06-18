@@ -21,3 +21,4 @@ build/
 Thumbs.db
 
 /venv
+config.yaml
