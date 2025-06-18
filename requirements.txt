@@ -8,4 +8,4 @@ pillow
 plotly
 python-pptx
 requests
-pyrebase
+pyrebase4
