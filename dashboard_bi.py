@@ -26,7 +26,7 @@ LOGO_URL = "https://i.ibb.co/zWJstk81/logo-nicopel-8.png"
 # ALTERADO: A autenticação agora lê diretamente dos Secrets do Streamlit, eliminando o config.yaml.
 try:
     authenticator = stauth.Authenticate(
-        st.secrets['credentials'],   
+        st.secrets['credentials'].copy(),  # A SOLUÇÃO ESTÁ AQUI, NO .copy()
         st.secrets['cookie']['name'],
         st.secrets['cookie']['key'],
         st.secrets['cookie']['expiry_days']
@@ -34,7 +34,6 @@ try:
 except KeyError as e:
     st.error(f"Erro de configuração nos Secrets: A chave '{e}' não foi encontrada. Verifique seu arquivo secrets.toml.")
     st.stop()
-
 
 # --- FUNÇÕES DO DASHBOARD ---
 
